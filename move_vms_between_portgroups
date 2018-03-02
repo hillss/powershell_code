@@ -1,0 +1,105 @@
+#-----------------------------------------------------------
+#	Script: 
+#	Author: 																						
+#	Date: 																						
+#	Company: 
+#	Revisions:
+#
+#------------------------------------------------------------
+
+<# Description
+vMotions VM's to a target cluster from CSV file and uses throttle. REQUIREMENT --- CSV must have fields for VMName, NewResourcePool, and PowerState
+#>
+
+# Load Modules and Snapins
+
+if ( (Get-PSSnapin -Name vmware.VimAutomation.core -ErrorAction SilentlyContinue) -eq $null )
+{
+    Add-PsSnapin vmware.VimAutomation.core
+}
+Import-Module VMware.VimAutomation.Vds
+#Import-Module CiscoUcsPS
+
+#Disco
+if ($global:DefaultVIServers) {
+    $disco = Disconnect-VIServer * -Confirm:$false -ErrorAction SilentlyContinue | Out-Null
+}
+
+# Variables 
+$vcenter = Read-Host "Enter IP or name of vCenter"
+#$adpaterupdates = Read-Host "How many concurrent adpater updates?"
+#$isSameVLANId = Read-Host "Are the portgroup on the same VLAN?"
+
+#if ($isSameVLANId -match "y") {
+#	"Error checking for source and destination portgroups are on the same VLAN ID"
+#	}
+
+
+$filepath = Read-Host "Enter full filepath to the XLSX"
+
+#$filterbycust = Read-Host "Filter VM's to move by customer RID? (y/n)"
+#if ($filterbycust -match "y") {
+#    $customer = Read-Host "Enter RID of Customer to Move"
+#}
+$currentuser = "$env:USERDOMAIN"+"\"+"$env:USERNAME"
+
+
+# Connect and Populate - Check for variable errors
+$connect = Connect-VIServer $vcenter
+if ($connect) {
+    Write-Host -ForegroundColor Green "Successfully connected to vCenter $vcenter..."
+}
+else {
+    Write-Host -ForegroundColor Yellow "Could not connect to vCenter $vCenter .. Exiting"
+    exit
+}
+#$clustercheck = Get-Cluster $targetcluster
+#if ($clustercheck) {
+#    Write-Host -ForegroundColor Green "Successfully connected to cluster $targetcluster..."
+#}
+#else {
+#    Write-Host -ForegroundColor Yellow "Could not connect to cluster $targetcluster  .. Exiting"
+#    exit
+#}
+$csv = Import-CSV -Path $filepath
+if ($csv) {
+    Write-Host -ForegroundColor Green "Successfully imported XLSX from $filepath ..."
+}
+else {
+    Write-Host -ForegroundColor Yellow "Could not load XLSX from $filepath .. Exiting"
+    exit
+}
+
+# Filter CSV for only Customer VMs
+if ($customer) {
+    $csv = $csv | ? {$_.rid -eq $customer}
+}
+
+# Filter 
+$counter = 1
+foreach ($item in $csv) {
+    Write-Host -ForegroundColor Green "Processing $counter out of"$csv.count"..."$item.vmname""
+    $counter++
+  
+	$vms = Get-VM $item.VMName -ErrorAction SilentlyContinue
+    if ($vms) {
+        foreach ($vm in $vms) {
+			$vmPortGroup = $vm | get-NetworkAdapter
+			
+			Write-Host -ForegroundColor cyan "Changing"$vm.name"portgroup from"$vmPortGroup.NetworkName"to"$item.destinationVDswitch
+			$done = $vm | Get-NetworkAdapter | Set-NetworkAdapter -NetworkName $item.destinationVDswitch -Confirm:$false 
+				#-RunAsync
+			
+			$currentHost = $vm.VMhost
+			$vnic = $vm | get-NetworkAdapter
+			$vnicvlan = ($currentHost | Get-VDSwitch | Get-VDPortgroup $vnic.NetworkName).vlanconfiguration.vlanid
+		   
+		   }
+		   
+        }
+   
+    else {
+        Write-Host -ForegroundColor Yellow ""$item.vmname"does not exist in $sourcecluster"
+    }
+
+}
