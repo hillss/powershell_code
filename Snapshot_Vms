@@ -1,0 +1,2 @@
+$vm = get-vm name1, name2
+new-snapshot -snapshot $vm.name -name nameOfSnapshot -Description "Des of Snapshot"
